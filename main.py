@@ -20,90 +20,7 @@ from sklearn.metrics import f1_score, classification_report
 import nsml
 
 from dataset import SpamDataset, TestDataset
-
-def train(model,criterion,optimizer,train_loader,val_loader,save_location,early_stop,n_epochs,print_every):
-    val_loss_min=np.inf
-    val_abnormal_f1_score_max=-np.inf
-    stop_count=0
-    val_max_acc=-np.inf
-    history=[]
-    model.epochs=0
-    for epoch in range(n_epochs):
-        train_loss=0
-        val_loss=0
-        train_acc=0
-        val_acc=0
-        
-        model.train()
-        ii=0
-        for data, label in train_loader:
-            ii+=1
-            data, label=data.to(device),label.to(device)
-            optimizer.zero_grad()
-            output=model(data)
-            loss=criterion(output,label)
-            loss.sum().backward()
-            optimizer.step()
-
-            train_loss+=loss.item()*data.size(0)
-            
-            _,pred=torch.max(output,dim=1)
-            correct_tensor=pred.eq(label.data.view_as(pred))
-            accuracy=torch.mean(correct_tensor.type(torch.FloatTensor))
-            train_acc+=accuracy.item()*data.size(0)
-
-            if ii%10==0:
-                print('Epoch: {}\t{:.2f}% complete.'.format(epoch,100*(ii+1)/len(train_loader)))
-        model.epochs+=1
-        with torch.no_grad():
-            model.eval()
-            preds=[]
-            trues=[]
-            for data, label in val_loader:
-                data, label=data.to(device), label.to(device)
-
-                output=model(data)
-                loss=criterion(output,label)
-                val_loss+=loss.item()*data.size(0)
-                _,pred=torch.max(output,dim=1)
-                correct_tensor=pred.eq(label.data.view_as(pred))
-                accuracy=torch.mean(correct_tensor.type(torch.FloatTensor))
-                val_acc+=accuracy.item()*data.size(0)
-                preds.append(pred.detach().cpu())
-                trues.append(label.detach().cpu())
-            preds=np.concatenate(preds)
-            trues=np.concatenate(trues)
-            cr=classification_report(trues,preds,labels=[0,1,2,3],target_names=['normal','monotone','screenshot','unknown'],output_dict=True,zero_division=0)
-            val_abnormal_f1_score=(cr['monotone']['f1-score']*cr['screenshot']['f1-score']*cr['unknown']['f1-score'])**(1/3)
-            train_loss=train_loss/len(train_loader.dataset)
-            val_loss=val_loss/len(val_loader.dataset)
-
-            train_acc=train_acc/len(train_loader.dataset)
-            val_acc=val_acc/len(val_loader.dataset)
-
-            history.append([train_loss,val_loss,train_acc,val_acc])
-
-            if (epoch+1)%print_every==0:
-                print('\nEpoch: {}\tTraining Loss: {:.4f}\tValidation Loss: {:.4f}'.format(epoch,train_loss,val_loss))
-                print('\t\tTraining Accuracy: {:.2f}%\tValidation Accuracy: {:.2f}%'.format(100*train_acc,100*val_acc))
-                print('\t\tClassification Report:{}'.format(cr))
-                print('\t\tF1 Score for Abnormal Class: {}'.format(val_abnormal_f1_score))
-
-            if val_abnormal_f1_score>val_abnormal_f1_score_max:
-                nsml.save(str(epoch))
-                stop_count=0
-                val_loss_min=val_loss
-                val_max_acc=val_acc
-                val_abnormal_f1_score_max=val_abnormal_f1_score
-                best_epoch=epoch
-            else:
-                stop_count+=1
-                if stop_count>=early_stop:
-                    print('\nEarly Stopping Total epochs: {}. Best epoch: {} with loss: {:.2f} and ac: {:.2f}% F1 Score for Abnormal Class: {}'.format(epoch,best_epoch,val_loss_min,100*val_acc,val_abnormal_f1_score_max))
-                    return
-    model.optimizer=optimizer
-    print('Best epoch: {} with loss: {:.2f} and ac: {:.2f}% f1-score: {}'.format(best_epoch,val_loss_min,100*val_acc,val_abnormal_f1_score_max))
-    return
+from train import train, mixed_train
 
 def evaluate(model,root_path):
     model.eval()
@@ -156,25 +73,39 @@ if __name__=="__main__":
     parsed_args=args.parse_args()
     global config
     config=import_module('experiments.{}'.format(parsed_args.experiment_name)).config
+
     model=config['model']
     criterion=config['criterion']
     optimizer=config['optimizer']
+    scheduler=config['scheduler']
+
     model=nn.DataParallel(model)
     global device
     device=torch.device('cuda:0' if config['cuda'] else 'cpu')
     bind_nsml(model,criterion)
+
     if parsed_args.pause:
         nsml.paused(scope=locals())
     if parsed_args.mode=='train':
+        print('mode: train')
         model=model.to(device)
         criterion=criterion.to(device)
-        dataset=SpamDataset(transform=config['transform'])
+        dataset=SpamDataset(transform=config['transform'],balance=config['balance'])
         total_len=len(dataset)
-        # sampler=WeightedRandomSampler(dataset.data_weight,config['batch_size'],replacement=True)
         train_set, val_set=torch.utils.data.random_split(dataset,[int(config['train_split']*total_len),total_len-int(config['train_split']*total_len)])
-        train_loader=torch.utils.data.DataLoader(train_set,batch_size=config['batch_size'],shuffle=True,num_workers=2)#,sampler=sampler)
+        train_loader=torch.utils.data.DataLoader(train_set,batch_size=config['batch_size'],shuffle=True,num_workers=2)
         val_loader=torch.utils.data.DataLoader(val_set,batch_size=config['batch_size'],shuffle=True,num_workers=2)
-        train(model,criterion,optimizer,train_loader,val_loader,None,config['early_stop'],config['n_epochs'],1)
+        train(model,criterion,optimizer,scheduler,train_loader,val_loader,config['early_stop'],config['n_epochs'],1,device)
+    elif parsed_args.mode=='mixed_train':
+        print('mode: mixed train')
+        model=model.to(device)
+        criterion=criterion.to(device)
+        dataset=SpamDataset(transform=config['transform'],balance=config['balance'])
+        total_len=len(dataset)
+        train_set, val_set=torch.utils.data.random_split(dataset,[int(config['train_split']*total_len),total_len-int(config['train_split']*total_len)])
+        train_loader=torch.utils.data.DataLoader(train_set,batch_size=config['batch_size'],shuffle=True,num_workers=2)
+        val_loader=torch.utils.data.DataLoader(val_set,batch_size=config['batch_size'],shuffle=True,num_workers=2)
+        mixed_train(model,criterion,optimizer,scheduler,train_loader,val_loader,device)
 
 
     

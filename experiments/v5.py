@@ -1,7 +1,7 @@
 import torch
 from torch import cuda
 from torch import optim, nn
-from models.inception_v3 import inception_v3
+from models.efficientnet import efficientnet_b6
 
 from torchvision import transforms
 
@@ -14,10 +14,10 @@ config={
     'n_epochs':100,
     'print_every':1,
     'cuda':True if cuda.is_available() else False,
-    'model':inception_v3(pretrained=True,freeze=True),
-    'criterion':nn.NLLLoss(),
+    'model':efficientnet_b6(pretrained=True,freeze=True),
+    'criterion':nn.CrossEntropyLoss(),
     'transform':transforms.Compose([
-            transforms.Resize(size=299),
+            transforms.Resize(size=224),
             # transforms.RandomRotation(degrees=15),
             # transforms.ColorJitter(),
             # transforms.RandomHorizontalFlip(),
@@ -28,5 +28,5 @@ config={
     'early_stop':100,
     'balance':True
 }
-config['optimizer']=optim.SGD(config['model'].parameters(), lr=config['lr'])
-config['scheduler']=None
+config['optimizer']=optim.Adam(config['model'].parameters(), lr=config['lr'])
+config['scheduler']=optim.lr_scheduler.ReduceLROnPlateau(config['optimizer'])

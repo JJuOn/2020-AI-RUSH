@@ -4,5 +4,5 @@ from distutils.core import setup
 setup(
     name="Spam classification - AI Rush baseline",
     version="1",
-    install_requires=['imbalanced-learn']
+    install_requires=['imbalanced-learn','efficientnet_pytorch']
 )

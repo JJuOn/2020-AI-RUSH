@@ -9,7 +9,7 @@ from nsml import DATASET_PATH
 
 
 class SpamDataset(Dataset):
-    def __init__(self,transform):
+    def __init__(self,transform,balance):
         self.df=pd.read_csv(os.path.join(DATASET_PATH,'train','train_label'))
         # only include labeled data
         self.df=self.df[self.df['annotation']!=-1]
@@ -19,16 +19,16 @@ class SpamDataset(Dataset):
         for i in range(4):
             self.data_size[i]=self.df['annotation'].value_counts()[i]
             print('class: {}, data_size: {}'.format(i,self.data_size[i]))
-        min_class=np.argmin(self.data_size)
-        self.df2=pd.DataFrame(columns=['filename','annotation'])
-        for i in range(4):
-            self.df2=self.df2.append(self.df[self.df['annotation']==i].sample(n=self.data_size[min_class],replace=True),ignore_index=True)
-        self.df=self.df2.copy()
-        print('After balancing:')
-        for i in range(4):
-            self.data_size[i]=self.df['annotation'].value_counts()[i]
-            print('class: {}, data_size: {}'.format(i,self.data_size[i]))
-        # self.data_weight=[self.data_size[0]/self.data_size[i] for i in range(4)]
+        if balance:
+            min_class=np.argmin(self.data_size)
+            self.df2=pd.DataFrame(columns=['filename','annotation'])
+            for i in range(4):
+                self.df2=self.df2.append(self.df[self.df['annotation']==i].sample(n=self.data_size[min_class],replace=True),ignore_index=True)
+            self.df=self.df2.copy()
+            print('After balancing:')
+            for i in range(4):
+                self.data_size[i]=self.df['annotation'].value_counts()[i]
+                print('class: {}, data_size: {}'.format(i,self.data_size[i]))
 
 
 

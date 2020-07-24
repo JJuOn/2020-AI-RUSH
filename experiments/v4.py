@@ -28,5 +28,5 @@ config={
     'early_stop':100,
     'balance':True
 }
-config['optimizer']=optim.SGD(config['model'].parameters(), lr=config['lr'])
-config['scheduler']=None
+config['optimizer']=optim.Adam(config['model'].parameters(), lr=config['lr'])
+config['scheduler']=optim.lr_scheduler.ReduceLROnPlateau(config['optimizer'])
