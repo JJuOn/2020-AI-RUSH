@@ -24,7 +24,11 @@ from train import train, mixed_train
 
 def evaluate(model,root_path):
     model.eval()
-    test_set=TestDataset(config['transform'],root_path)
+    test_set=TestDataset(transform.Compose([
+            transforms.Resize(size=224),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
+            ]),root_path)
     test_loader=torch.utils.data.DataLoader(test_set,batch_size=config['batch_size'],shuffle=False)
     filenames=[]
     y_preds=[]

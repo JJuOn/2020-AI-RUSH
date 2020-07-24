@@ -7,6 +7,7 @@ from torchvision import transforms, utils
 from PIL import Image
 from nsml import DATASET_PATH
 
+classes=['normal','screenshot','monotone','unknown']
 
 class SpamDataset(Dataset):
     def __init__(self,transform,balance):
@@ -42,7 +43,10 @@ class SpamDataset(Dataset):
         image_name=self.df.loc[idx,'filename']
         annotation=self.df.loc[idx,'annotation']
         img=Image.open(os.path.join(DATASET_PATH,'train','train_data',image_name))
-        img=self.transform(img)
+        if isinstance(self.transform,transforms.Compose):
+            img=self.transform(img)
+        elif isinstance(self.transform,dict):
+            img=self.transform[classes[annotation]](img)
         return img, annotation
 
 class TestDataset(Dataset):
